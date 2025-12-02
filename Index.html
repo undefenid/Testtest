@@ -1,0 +1,114 @@
+<div id="player-container" style="position:fixed; top:0; left:0; width:100vw; height:100vh; z-index:9999; background:#000;"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/clappr@latest/dist/clappr.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dash-shaka-playback@latest/dist/dash-shaka-playback.min.js"></script>
+
+<script>
+const player = new Clappr.Player({
+  parentId: "#player-container",
+  plugins: [DashShakaPlayback],
+  source: "https://cdn02.gigared.com.ar/live/eds/Canal_12_Misiones/sa_live_dash/Canal_12_Misiones.mpd",
+  shakaConfiguration: {
+    preferredAudioLanguage: 'es', // <--- FORZA ESPAÑOL REAL DESDE EL INICIO
+    drm: {
+      clearKeys: {
+        "ed6e9faec04aa78f261171d1ace48957": "2995fa69fa1158e82547d5d5a22b4e98"
+      }
+    }
+  },
+  autoPlay: true,
+  width: "100vw",
+  height: "100vh",
+  mute: false
+});
+
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+const isSmartTV = /SmartTV|Tizen|Web0S|SmartHub|Chromecast/i.test(navigator.userAgent);
+
+// =========================
+// AUDIO BOOST
+// =========================
+if (!isSmartTV) {
+  player.on("play", function () {
+    const video = document.querySelector("#player-container video");
+    if (video && !video.audioBoostApplied) {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioCtx.createMediaElementSource(video);
+        const gain = audioCtx.createGain();
+        gain.gain.value = 2;
+        source.connect(gain);
+        gain.connect(audioCtx.destination);
+        video.muted = false;
+        video.volume = 1.0;
+        video.audioBoostApplied = true;
+      } catch(e) {
+        console.warn("Audio boost no disponible:", e);
+      }
+    }
+  });
+}
+
+// =========================
+// SMART TV FALLBACK
+// =========================
+if (isSmartTV) {
+  player.on("ready", function () {
+    const video = document.querySelector("#player-container video");
+    if (video) {
+      video.muted = false;
+      try { video.volume = 1.0; } catch(e){}
+    }
+  });
+}
+
+// =========================
+// ROTACIÓN AUTOMÁTICA
+// =========================
+player.on("fullscreen", function(e) {
+  const contenedor = document.getElementById("player-container");
+
+  if (!isIOS && screen.orientation) {
+    if (e.fullscreen) {
+      const tryLock = async () => {
+        try { await screen.orientation.lock("landscape"); }
+        catch(err) { setTimeout(tryLock, 200); }
+      };
+      tryLock();
+    } else {
+      try { screen.orientation.unlock(); } catch(err) {}
+    }
+  }
+
+  if (isIOS) {
+    if (e.fullscreen) contenedor.classList.add("ios-landscape");
+    else contenedor.classList.remove("ios-landscape");
+  }
+});
+
+// =========================
+// WAKE LOCK
+// =========================
+let wakeLock = null;
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log('Wake Lock activado');
+      wakeLock.addEventListener('release', () => console.log('Wake Lock liberado'));
+    }
+  } catch (err) {
+    console.error('No se pudo activar Wake Lock:', err);
+  }
+}
+
+document.addEventListener('visibilitychange', async () => {
+  if (wakeLock !== null && document.visibilityState === 'visible') {
+    await requestWakeLock();
+  }
+});
+
+player.on("play", () => {
+  requestWakeLock();
+});
+</script>
